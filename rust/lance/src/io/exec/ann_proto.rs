@@ -36,7 +36,7 @@ use super::utils::PreFilterSource;
 ///
 /// Wraps the array in a single-column RecordBatch so that the IPC format
 /// preserves the full data type (Float16, Float32, Float64, UInt8, etc.).
-fn query_vector_to_ipc_bytes(array: &dyn arrow_array::Array) -> Result<Vec<u8>> {
+pub fn query_vector_to_ipc_bytes(array: &dyn arrow_array::Array) -> Result<Vec<u8>> {
     let field = Field::new("query_vector", array.data_type().clone(), true);
     let schema = Arc::new(ArrowSchema::new(vec![field]));
     let batch = RecordBatch::try_new(schema, vec![arrow_array::make_array(array.to_data())])
@@ -61,7 +61,7 @@ fn query_vector_to_ipc_bytes(array: &dyn arrow_array::Array) -> Result<Vec<u8>> 
 }
 
 /// Deserialize a query vector array from IPC file-format bytes.
-fn query_vector_from_ipc_bytes(bytes: &[u8]) -> Result<arrow_array::ArrayRef> {
+pub fn query_vector_from_ipc_bytes(bytes: &[u8]) -> Result<arrow_array::ArrayRef> {
     let cursor = std::io::Cursor::new(bytes);
     let reader = arrow_ipc::reader::FileReader::try_new(cursor, None)
         .map_err(|e| Error::internal(format!("Failed to create IPC reader: {e}")))?;
