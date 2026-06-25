@@ -553,6 +553,8 @@ impl TakeExec {
     pub fn dataset(&self) -> &Arc<Dataset> {
         &self.dataset
     }
+
+    pub fn output_projection(&self) -> &Projection { &self.output_projection }
 }
 
 impl ExecutionPlan for TakeExec {
