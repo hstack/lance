@@ -19,7 +19,8 @@ use datafusion::physical_plan::stream::RecordBatchStreamAdapter;
 use datafusion::physical_plan::union::UnionExec;
 use datafusion::physical_plan::{DisplayAs, DisplayFormatType, ExecutionPlan, PlanProperties};
 use datafusion_physical_expr::expressions::Column;
-use datafusion_physical_expr::{Distribution, EquivalenceProperties, Partitioning};
+use datafusion_physical_expr::{Distribution, EquivalenceProperties, Partitioning, PhysicalSortExpr};
+use arrow_schema::SortOptions;
 use datafusion_physical_plan::joins::{HashJoinExec, PartitionMode};
 use datafusion_physical_plan::metrics::{BaselineMetrics, Count};
 use futures::future::try_join_all;
@@ -189,6 +190,7 @@ impl MetricsCollector for FtsIndexMetrics {
     }
 }
 
+
 #[derive(Debug)]
 pub struct MatchQueryExec {
     dataset: Arc<Dataset>,
@@ -246,7 +248,10 @@ impl MatchQueryExec {
         prefilter_source: PreFilterSource,
     ) -> Self {
         let properties = Arc::new(PlanProperties::new(
-            EquivalenceProperties::new(FTS_SCHEMA.clone()),
+            EquivalenceProperties::new_with_orderings(FTS_SCHEMA.clone(), [[PhysicalSortExpr::new(
+                Arc::new(Column::new(SCORE_COL, 1)),
+                SortOptions { descending: true, nulls_first: true },
+            )]]),
             Partitioning::RoundRobinBatch(1),
             EmissionType::Final,
             Boundedness::Bounded,
@@ -281,7 +286,10 @@ impl MatchQueryExec {
         segments: Vec<IndexMetadata>,
     ) -> Self {
         let properties = Arc::new(PlanProperties::new(
-            EquivalenceProperties::new(FTS_SCHEMA.clone()),
+            EquivalenceProperties::new_with_orderings(FTS_SCHEMA.clone(), [[PhysicalSortExpr::new(
+                Arc::new(Column::new(SCORE_COL, 1)),
+                SortOptions { descending: true, nulls_first: true },
+            )]]),
             Partitioning::RoundRobinBatch(1),
             EmissionType::Final,
             Boundedness::Bounded,

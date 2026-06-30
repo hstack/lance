@@ -20,7 +20,9 @@ use datafusion::physical_plan::stream::RecordBatchStreamAdapter;
 use datafusion::physical_plan::{
     DisplayAs, DisplayFormatType, ExecutionPlan, PlanProperties, SendableRecordBatchStream,
 };
-use datafusion_physical_expr::EquivalenceProperties;
+use datafusion_physical_expr::expressions::Column;
+use datafusion_physical_expr::projection::ProjectionMapping;
+use datafusion_physical_expr::{EquivalenceProperties, PhysicalExpr};
 use futures::FutureExt;
 use futures::stream::{FuturesOrdered, Stream, StreamExt, TryStreamExt};
 use lance_arrow::RecordBatchExt;
@@ -477,12 +479,31 @@ impl TakeExec {
             &projection,
         ));
         let output_arrow = Arc::new(ArrowSchema::from(output_schema.as_ref()));
+        // Propagate input ordering through the schema change. TakeExec always
+        // places input fields first in the same order, so input field at index i
+        // maps to output field at index i. New dataset fields appended at the end
+        // have no ordering and are simply not included in the mapping.
+        let input_schema_ref = input.schema();
+        let mapping_exprs = input_schema_ref.fields().iter().enumerate().map(|(i, f)| {
+            (
+                Arc::new(Column::new(f.name(), i)) as Arc<dyn PhysicalExpr>,
+                f.name().to_string(),
+            )
+        });
+        let eq_props = ProjectionMapping::try_new(mapping_exprs, &input_schema_ref)
+            .map(|m| {
+                input
+                    .properties()
+                    .equivalence_properties()
+                    .project(&m, output_arrow.clone())
+            })
+            .unwrap_or_else(|_| EquivalenceProperties::new(output_arrow.clone()));
         let properties = Arc::new(
             input
                 .properties()
                 .as_ref()
                 .clone()
-                .with_eq_properties(EquivalenceProperties::new(output_arrow.clone())),
+                .with_eq_properties(eq_props),
         );
 
         Ok(Some(Self {
