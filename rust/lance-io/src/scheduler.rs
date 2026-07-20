@@ -353,6 +353,10 @@ struct IoTask {
     when_done: Box<dyn FnOnce(Result<Bytes>) + Send>,
     priority: u128,
     bypass_backpressure: bool,
+    // Span active when this task was submitted (on the caller's task). The I/O
+    // loop spawns `run()` on a detached tokio task, so we re-enter this span
+    // inside `run()` to keep object-store reads parented to the request trace.
+    span: tracing::Span,
 }
 
 impl Eq for IoTask {}
@@ -390,33 +394,42 @@ impl IoTask {
     }
 
     async fn run(self) {
-        let file_path = self.reader.path().as_ref();
-        let num_bytes = self.num_bytes();
-        let bytes = if self.to_read.start == self.to_read.end {
-            Ok(Bytes::new())
-        } else {
-            let bytes_fut = self
-                .reader
-                .get_range(self.to_read.start as usize..self.to_read.end as usize);
-            IOPS_COUNTER.fetch_add(1, Ordering::Release);
+        // Re-enter the submitting task's span so the downstream object-store
+        // `get`/`get_range` reads are parented to the request trace instead of
+        // becoming independent trace roots on the detached I/O task.
+        use tracing::Instrument;
+        let span = self.span.clone();
+        async move {
+            let file_path = self.reader.path().as_ref();
             let num_bytes = self.num_bytes();
-            bytes_fut
-                .inspect(move |_| {
-                    BYTES_READ_COUNTER.fetch_add(num_bytes, Ordering::Release);
-                })
-                .await
-                .map_err(Error::from)
-        };
-        // Emit per-file I/O trace event only when tracing is enabled
-        tracing::trace!(
-            file = file_path,
-            bytes_read = num_bytes,
-            requests = 1,
-            range_start = self.to_read.start,
-            range_end = self.to_read.end,
-            "File I/O completed"
-        );
-        (self.when_done)(bytes);
+            let bytes = if self.to_read.start == self.to_read.end {
+                Ok(Bytes::new())
+            } else {
+                let bytes_fut = self
+                    .reader
+                    .get_range(self.to_read.start as usize..self.to_read.end as usize);
+                IOPS_COUNTER.fetch_add(1, Ordering::Release);
+                let num_bytes = self.num_bytes();
+                bytes_fut
+                    .inspect(move |_| {
+                        BYTES_READ_COUNTER.fetch_add(num_bytes, Ordering::Release);
+                    })
+                    .await
+                    .map_err(Error::from)
+            };
+            // Emit per-file I/O trace event only when tracing is enabled
+            tracing::trace!(
+                file = file_path,
+                bytes_read = num_bytes,
+                requests = 1,
+                range_start = self.to_read.start,
+                range_end = self.to_read.end,
+                "File I/O completed"
+            );
+            (self.when_done)(bytes);
+        }
+        .instrument(span)
+        .await
     }
 }
 
@@ -693,6 +706,7 @@ impl ScanScheduler {
                 to_read: iop,
                 priority,
                 bypass_backpressure,
+                span: tracing::Span::current(),
                 when_done: Box::new(move |data| {
                     io_queue_clone.on_iop_complete();
                     let mut dest = dest.lock().unwrap();
@@ -1032,6 +1046,7 @@ mod tests {
             when_done: Box::new(|_| {}),
             priority,
             bypass_backpressure,
+            span: tracing::Span::none(),
         }
     }
 
