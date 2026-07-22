@@ -806,7 +806,7 @@ impl Dataset {
     }
 
     #[allow(clippy::too_many_arguments)]
-    fn checkout_manifest(
+    pub fn checkout_manifest(
         object_store: Arc<ObjectStore>,
         base_path: Path,
         uri: String,

@@ -94,7 +94,7 @@ pub async fn filtered_read_exec_from_proto(
 // FilteredReadOptions <-> Proto
 // =============================================================================
 
-fn fr_options_to_proto(
+pub fn fr_options_to_proto(
     options: &FilteredReadOptions,
     filter_schema: &Arc<ArrowSchema>,
     state: &SessionState,
@@ -460,7 +460,7 @@ fn fragments_from_proto(fragment_ids: &[u64], dataset: &Arc<Dataset>) -> Result<
         .collect()
 }
 
-fn schema_to_bytes(schema: &ArrowSchema) -> Result<Vec<u8>> {
+pub fn schema_to_bytes(schema: &ArrowSchema) -> Result<Vec<u8>> {
     let options =
         arrow_ipc::writer::IpcWriteOptions::try_new(8, false, arrow_ipc::MetadataVersion::V5)
             .map_err(|e| Error::internal(format!("Failed to create IPC write options: {}", e)))?;
@@ -470,7 +470,7 @@ fn schema_to_bytes(schema: &ArrowSchema) -> Result<Vec<u8>> {
     Ok(encoded.ipc_message.to_vec())
 }
 
-fn schema_from_bytes(bytes: &[u8]) -> Result<Arc<ArrowSchema>> {
+pub fn schema_from_bytes(bytes: &[u8]) -> Result<Arc<ArrowSchema>> {
     let message = arrow_ipc::root_as_message(bytes)
         .map_err(|e| Error::internal(format!("Failed to parse IPC schema message: {}", e)))?;
     let ipc_schema = message
