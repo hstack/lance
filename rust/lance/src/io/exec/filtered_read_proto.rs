@@ -153,7 +153,7 @@ pub fn fr_options_to_proto(
     })
 }
 
-async fn fr_options_from_proto(
+pub async fn fr_options_from_proto(
     proto: pb::FilteredReadOptionsProto,
     dataset: &Arc<Dataset>,
     state: &SessionState,
