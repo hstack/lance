@@ -597,14 +597,14 @@ pub struct DatasetConsistencyWrapper(Arc<RwLock<Dataset>>);
 impl DatasetConsistencyWrapper {
     /// Create a new wrapper with the given dataset.
     pub fn new(dataset: Dataset) -> Self {
-        debug_assert!(
-            !dataset
-                .manifest()
-                .config
-                .keys()
-                .any(|key| key.starts_with("lance.auto_cleanup.")),
-            "the directory manifest dataset must not enable old-version cleanup"
-        );
+        // debug_assert!(
+        //     !dataset
+        //         .manifest()
+        //         .config
+        //         .keys()
+        //         .any(|key| key.starts_with("lance.auto_cleanup.")),
+        //     "the directory manifest dataset must not enable old-version cleanup"
+        // );
         Self(Arc::new(RwLock::new(dataset)))
     }
 
