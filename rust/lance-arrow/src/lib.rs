@@ -1356,11 +1356,14 @@ fn merge_with_schema(
                         let right_sub_array = right_columns[right_idx].as_struct();
                         let merged_sub_array =
                             merge_with_schema(left_sub_array, right_sub_array, child_fields);
-                        output_fields.push(Field::new(
-                            field.name(),
-                            merged_sub_array.data_type().clone(),
-                            field.is_nullable(),
-                        ));
+                        output_fields.push(
+                            Field::new(
+                                field.name(),
+                                merged_sub_array.data_type().clone(),
+                                field.is_nullable(),
+                            )
+                            .with_metadata(field.metadata().clone()),
+                        );
                         columns.push(Arc::new(merged_sub_array) as ArrayRef);
                     }
                     DataType::List(child_field) => {
@@ -1845,6 +1848,88 @@ mod tests {
             RecordBatch::try_new(Arc::new(both_schema), vec![Arc::new(both_null_list)]).unwrap();
         let merged = x_batch.merge(&y_null_batch).unwrap();
         assert_eq!(merged, expected);
+    }
+
+    #[test]
+    fn test_merge_with_schema_preserves_nested_struct_metadata_in_list() {
+        let metadata = HashMap::from([("meta:status".to_string(), "deprecated".to_string())]);
+
+        let make_batch = |child_name: &str, value: i32| {
+            let child_fields = Fields::from(vec![Field::new(child_name, DataType::Int32, true)]);
+            let attributes = Arc::new(StructArray::new(
+                child_fields.clone(),
+                vec![Arc::new(Int32Array::from(vec![value])) as ArrayRef],
+                None,
+            ));
+            let attributes_field = Arc::new(
+                Field::new("attributes", DataType::Struct(child_fields), true)
+                    .with_metadata(metadata.clone()),
+            );
+            let item_fields = Fields::from(vec![attributes_field]);
+            let item = Arc::new(StructArray::new(
+                item_fields.clone(),
+                vec![attributes as ArrayRef],
+                None,
+            ));
+            let item_field = Arc::new(Field::new("element", DataType::Struct(item_fields), true));
+            let list = Arc::new(ListArray::new(
+                item_field,
+                OffsetBuffer::from_lengths([1]),
+                item,
+                None,
+            ));
+
+            RecordBatch::try_new(
+                Arc::new(Schema::new(vec![Field::new(
+                    "signals",
+                    list.data_type().clone(),
+                    true,
+                )])),
+                vec![list as ArrayRef],
+            )
+            .unwrap()
+        };
+
+        let left = make_batch("sentiment", 1);
+        let right = make_batch("intents", 2);
+
+        let target_attributes_field = Arc::new(
+            Field::new(
+                "attributes",
+                DataType::Struct(Fields::from(vec![
+                    Field::new("sentiment", DataType::Int32, true),
+                    Field::new("intents", DataType::Int32, true),
+                ])),
+                true,
+            )
+            .with_metadata(metadata.clone()),
+        );
+        let target_item_field = Arc::new(Field::new(
+            "element",
+            DataType::Struct(Fields::from(vec![target_attributes_field])),
+            true,
+        ));
+        let target_schema = Schema::new(vec![Field::new(
+            "signals",
+            DataType::List(target_item_field),
+            true,
+        )]);
+
+        let merged = left.merge_with_schema(&right, &target_schema).unwrap();
+
+        assert_eq!(merged.schema().as_ref(), &target_schema);
+        let merged_items = merged
+            .column_by_name("signals")
+            .unwrap()
+            .as_list::<i32>()
+            .values()
+            .as_struct();
+        let attributes_field = merged_items
+            .fields()
+            .find("attributes")
+            .map(|(_, field)| field)
+            .unwrap();
+        assert_eq!(attributes_field.metadata(), &metadata);
     }
 
     #[test]
