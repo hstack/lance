@@ -1386,11 +1386,14 @@ fn merge_with_schema(
                         let right_sub_array = right_columns[right_idx].as_struct();
                         let merged_sub_array =
                             merge_with_schema(left_sub_array, right_sub_array, child_fields);
-                        output_fields.push(Field::new(
-                            field.name(),
-                            merged_sub_array.data_type().clone(),
-                            field.is_nullable(),
-                        ));
+                        output_fields.push(
+                            Field::new(
+                                field.name(),
+                                merged_sub_array.data_type().clone(),
+                                field.is_nullable(),
+                            )
+                            .with_metadata(field.metadata().clone()),
+                        );
                         columns.push(Arc::new(merged_sub_array) as ArrayRef);
                     }
                     DataType::List(child_field) => {
