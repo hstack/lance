@@ -3465,13 +3465,19 @@ mod tests {
             ))),
             ..Default::default()
         };
-        let (destination_store, _) = ObjectStore::from_uri_and_params(
+        let destination = ObjectStore::from_uri_and_params(
             Arc::new(ObjectStoreRegistry::default()),
             dest_dir.to_str().unwrap(),
             &params,
         )
-        .await
-        .unwrap();
+        .await;
+        if local_fsync {
+            let error = destination.unwrap_err();
+            assert!(matches!(error, Error::InvalidInput { .. }), "{error:?}");
+            assert!(error.to_string().contains("local_fsync=true"), "{error}");
+            return;
+        }
+        let (destination_store, _) = destination.unwrap();
 
         // Create paths
         let from_path = base_path.clone().join(source_file_name);

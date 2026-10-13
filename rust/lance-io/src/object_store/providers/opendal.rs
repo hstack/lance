@@ -69,13 +69,13 @@ mod tests {
     use object_store::ObjectStoreExt as _;
     use opendal::raw::oio;
     use opendal::raw::{
-        OpCopy, OpCreateDir, OpList, OpPresign, OpRead, OpRename, OpStat, OpWrite, RpCreateDir,
-        RpPresign, RpRename, RpStat, Service, ServiceInfo,
+        OpCopier, OpCopy, OpCreateDir, OpList, OpPresign, OpRead, OpRename, OpStat, OpWrite,
+        RpCreateDir, RpPresign, RpRename, RpStat, Service, ServiceInfo,
     };
     #[cfg(feature = "aws")]
     use opendal::services::S3;
     use opendal::{
-        Buffer, Capability, Error, ErrorKind, Metadata, MetadataBuilder, OperationContext, Result,
+        Buffer, Capability, EntryMode, Error, ErrorKind, Metadata, OperationContext, Result,
     };
     use rstest::rstest;
     #[cfg(feature = "aws")]
@@ -155,7 +155,6 @@ mod tests {
         type Lister = ();
         type Deleter = ();
         type Copier = ();
-        type Composer = ();
 
         fn info(&self) -> ServiceInfo {
             ServiceInfo::with_scheme("retry_test")
@@ -193,7 +192,9 @@ mod tests {
                 };
             }
 
-            Ok(RpStat::new(MetadataBuilder::file(0).build()))
+            Ok(RpStat::new(
+                Metadata::new(EntryMode::FILE).with_content_length(0),
+            ))
         }
 
         fn read(&self, _: &OperationContext, _: &str, _: OpRead) -> Result<Self::Reader> {
@@ -228,7 +229,14 @@ mod tests {
             ))
         }
 
-        fn copy(&self, _: &OperationContext, _: &str, _: &str, _: OpCopy) -> Result<Self::Copier> {
+        fn copy(
+            &self,
+            _: &OperationContext,
+            _: &str,
+            _: &str,
+            _: OpCopy,
+            _: OpCopier,
+        ) -> Result<Self::Copier> {
             Err(Error::new(
                 ErrorKind::Unsupported,
                 "operation is not supported",
@@ -308,7 +316,7 @@ mod tests {
                 );
             }
 
-            Ok(MetadataBuilder::file(self.content_length as u64).build())
+            Ok(Metadata::new(EntryMode::FILE).with_content_length(self.content_length as u64))
         }
 
         async fn abort(&mut self) -> Result<()> {

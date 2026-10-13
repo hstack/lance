@@ -111,12 +111,16 @@ impl ObjectStoreProvider for FileStoreProvider {
         let storage_options = StorageOptions(params.storage_options().cloned().unwrap_or_default());
         let download_retry_count = storage_options.download_retry_count();
         let local_fsync = storage_options.local_fsync()?;
+        if local_fsync {
+            return Err(Error::invalid_input(
+                "local_fsync=true is not supported with object_store 0.13.2",
+            ));
+        }
 
         #[cfg(windows)]
         let (inner, local_dir_operations) = match windows::extract_unc_path(&base_path)? {
             Some(unc_path) => {
-                let inner =
-                    LocalFileSystem::new_with_prefix(unc_path.root)?.with_fsync(local_fsync);
+                let inner = LocalFileSystem::new_with_prefix(unc_path.root)?;
                 let operations = FileSystemDirOperations {
                     local_file_system: inner.clone(),
                 };
@@ -125,10 +129,10 @@ impl ObjectStoreProvider for FileStoreProvider {
                     Some(Arc::new(operations) as Arc<dyn LocalDirOperations>),
                 )
             }
-            None => (LocalFileSystem::new().with_fsync(local_fsync), None),
+            None => (LocalFileSystem::new(), None),
         };
         #[cfg(not(windows))]
-        let inner = LocalFileSystem::new().with_fsync(local_fsync);
+        let inner = LocalFileSystem::new();
         #[cfg(not(windows))]
         let local_dir_operations = None;
 
@@ -200,7 +204,10 @@ mod tests {
     #[case::direct("file")]
     #[case::object_store("file-object-store")]
     #[tokio::test]
-    async fn test_local_fsync_storage_option(#[case] scheme: &str) {
+    async fn test_local_fsync_storage_option(
+        #[case] scheme: &str,
+        #[values(false, true)] enabled: bool,
+    ) {
         let provider = FileStoreProvider;
         let url = Url::parse(&format!("{scheme}:///")).unwrap();
         let default_store = provider
@@ -211,12 +218,20 @@ mod tests {
 
         let params = ObjectStoreParams {
             storage_options_accessor: Some(Arc::new(StorageOptionsAccessor::with_static_options(
-                HashMap::from([("local_fsync".to_owned(), "true".to_owned())]),
+                HashMap::from([("local_fsync".to_owned(), enabled.to_string())]),
             ))),
             ..Default::default()
         };
-        let store = provider.new_store(url, &params).await.unwrap();
-        assert!(store.local_fsync);
+        let result = provider.new_store(url, &params).await;
+        if enabled {
+            let error = result.unwrap_err();
+            assert!(matches!(error, Error::InvalidInput { .. }), "{error:?}");
+            assert!(error.to_string().contains("local_fsync=true"), "{error}");
+            assert!(error.to_string().contains("object_store 0.13.2"), "{error}");
+            return;
+        }
+        let store = result.unwrap();
+        assert!(!store.local_fsync);
 
         let directory = tempdir().unwrap();
         let file_path = directory.path().join("data");

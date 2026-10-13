@@ -97,6 +97,12 @@ spark-sql --conf "spark.sql.catalog.lance.storage.scheduler_error_mode=fail_fast
 
 ### Local filesystem durability
 
+!!! warning
+
+    This build pins `object_store` to `0.13.2` for DataFusion integration.
+    `local_fsync=true` requires `object_store` 0.14 or newer and is rejected
+    in this build. The default `local_fsync=false` remains supported.
+
 Set `local_fsync` to `"true"` for local datasets when writes must be durable
 before they return:
 

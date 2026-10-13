@@ -2210,10 +2210,16 @@ async fn test_deep_clone(
         ..Default::default()
     };
     // Perform deep clone
-    let cloned_dataset = branch
+    let clone_result = branch
         .deep_clone(cloned_uri, "tag", Some(store_params.clone()))
-        .await
-        .unwrap();
+        .await;
+    if local_fsync {
+        let error = clone_result.unwrap_err();
+        assert!(matches!(error, Error::InvalidInput { .. }), "{error:?}");
+        assert!(error.to_string().contains("local_fsync=true"), "{error}");
+        return;
+    }
+    let cloned_dataset = clone_result.unwrap();
 
     // Validate target dataset rows
     let batches = cloned_dataset
