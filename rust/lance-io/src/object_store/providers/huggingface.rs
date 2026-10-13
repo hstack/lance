@@ -167,12 +167,12 @@ fn build_hf_store(config_map: HashMap<String, String>) -> Result<OpendalStore> {
         builder = builder.download_mode(download_mode);
     }
     if let Some(enabled) = config_map.get("enable_resolve_cache") {
-        let enabled = enabled.parse::<bool>().map_err(|_| {
-            Error::invalid_input(format!(
-                "Invalid Huggingface enable_resolve_cache: {enabled:?}. Expected true or false"
-            ))
-        })?;
-        builder = builder.enable_resolve_cache(enabled);
+        // let enabled = enabled.parse::<bool>().map_err(|_| {
+        //     Error::invalid_input(format!(
+        //         "Invalid Huggingface enable_resolve_cache: {enabled:?}. Expected true or false"
+        //     ))
+        // })?;
+        // builder = builder.enable_resolve_cache(enabled);
     }
 
     let operator = Operator::new(builder).map_err(|e| {

@@ -4697,7 +4697,6 @@ mod tests {
                 Ok(ListResult {
                     common_prefixes: vec![],
                     objects: vec![],
-                    extensions: Default::default(),
                 })
             }
 
