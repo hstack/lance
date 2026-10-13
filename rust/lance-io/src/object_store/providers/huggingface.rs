@@ -172,7 +172,11 @@ fn build_hf_store(config_map: HashMap<String, String>) -> Result<OpendalStore> {
                 "Invalid Huggingface enable_resolve_cache: {enabled:?}. Expected true or false"
             ))
         })?;
-        builder = builder.enable_resolve_cache(enabled);
+        if enabled {
+            return Err(Error::invalid_input(
+                "Huggingface enable_resolve_cache=true is not supported by OpenDAL 0.58",
+            ));
+        }
     }
 
     let operator = Operator::new(builder).map_err(|e| {
@@ -384,7 +388,13 @@ mod tests {
             config.get("enable_resolve_cache").map(String::as_str),
             expected
         );
-        build_hf_store(config).unwrap();
+        if expected == Some("true") {
+            let err = build_hf_store(config).unwrap_err();
+            assert!(matches!(err, Error::InvalidInput { .. }));
+            assert!(err.to_string().contains("not supported by OpenDAL 0.58"));
+        } else {
+            build_hf_store(config).unwrap();
+        }
     }
 
     #[rstest]
@@ -495,7 +505,7 @@ mod tests {
             StaticMockStorageOptionsProvider {
                 options: HashMap::from([
                     ("hf_token".to_string(), "dynamic-token".to_string()),
-                    ("hf_enable_resolve_cache".to_string(), "true".to_string()),
+                    ("hf_enable_resolve_cache".to_string(), "false".to_string()),
                 ]),
             },
         )));

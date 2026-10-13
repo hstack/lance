@@ -672,7 +672,6 @@ mod tests {
                 },
                 range,
                 attributes: Attributes::default(),
-                extensions: Default::default(),
             })
         }
         fn delete_stream(

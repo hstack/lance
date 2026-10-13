@@ -397,7 +397,6 @@ impl object_store::ObjectStore for RecordingRangeObjectStore {
             meta: self.object_meta(location),
             range,
             attributes: Attributes::default(),
-            extensions: Default::default(),
         })
     }
 

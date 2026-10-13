@@ -2187,7 +2187,6 @@ mod tests {
                     result: ListResult {
                         common_prefixes: vec![Path::from("prefix/child")],
                         objects: Vec::new(),
-                        extensions: Default::default(),
                     },
                     page_token: None,
                 }),
