@@ -2076,7 +2076,7 @@ pub struct FilteredReadExec {
     metrics: ExecutionPlanMetricsSet,
     input: RowSelector,
     // Precomputed internal plan
-    plan: Arc<OnceCell<FilteredReadInternalPlan>>,
+    pub plan: Arc<OnceCell<FilteredReadInternalPlan>>,
     // When execute is first called we will initialize the FilteredReadStream.  In order to support
     // multiple partitions, each partition will share the stream.
     running_stream: Arc<AsyncMutex<Option<FilteredReadStream>>>,
@@ -2146,7 +2146,7 @@ pub struct FilteredReadPlan {
 /// Internal plan representation - uses ranges for efficiency in local execution
 /// This avoids expensive range↔bitmap conversion
 #[derive(Clone, Debug)]
-struct FilteredReadInternalPlan {
+pub struct FilteredReadInternalPlan {
     /// Fragment ID to ranges to read (BTreeMap for deterministic order with scan_range_after_filter)
     rows: BTreeMap<u32, Vec<Range<u64>>>,
     /// Filter to apply per fragment (fragments not here don't need filtering)
@@ -3536,6 +3536,21 @@ impl ExecutionPlan for FilteredReadExec {
         self: Arc<Self>,
         children: Vec<Arc<dyn ExecutionPlan>>,
     ) -> DataFusionResult<Arc<dyn ExecutionPlan>> {
+        // HSTACK - IF the child list is empty before AND after, we
+        // preserve the prepared selection in the plan
+        // Used for distributed execution
+        if self.input.child().is_none() && children.is_empty() {
+            let rebuilt = Self::try_new(self.dataset.clone(), self.options.clone(), None)
+                .map_err(|e| DataFusionError::External(e.into()))?;
+
+            // Copy into the constructor's fresh cell; do not share execution state.
+            if let Some(plan) = self.plan.get() {
+                let _ = rebuilt.plan.set(plan.clone());
+            }
+
+            return Ok(Arc::new(rebuilt));
+        }
+
         if children.len() > 1 {
             Err(DataFusionError::External(
                 Error::internal("A FilteredReadExec cannot have two children".to_string()).into(),
