@@ -223,7 +223,7 @@ struct ScopedFragmentRead {
     file_reader_options: Option<FileReaderOptions>,
     // An in-memory filter to apply after reading the fragment (whatever couldn't be
     // pushed down into the index query)
-    filter: Option<Expr>,
+    filter: Option<Arc<Expr>>,
     physical_filter: Option<Arc<dyn PhysicalExpr>>,
     priority: u32,
     scan_scheduler: Arc<ScanScheduler>,
@@ -933,6 +933,14 @@ impl FilteredReadStream {
 
         // Build filters for each fragment
         let mut filters = HashMap::new();
+        let full_filter = options
+            .full_filter
+            .as_ref()
+            .map(|filter| Arc::new(filter.clone()));
+        let refine_filter = options
+            .refine_filter
+            .as_ref()
+            .map(|filter| Arc::new(filter.clone()));
         for fragment in fragments.iter() {
             let fragment_id = fragment.fragment.id() as u32;
             if let Some(to_read) = fragments_to_read.get(&fragment_id) {
@@ -948,19 +956,19 @@ impl FilteredReadStream {
                             let can_skip_recheck = r.is_exact()
                                 || (r.is_at_least() && scan_planned_with_limit_pushed_down);
                             if can_skip_recheck {
-                                options.refine_filter.clone()
+                                refine_filter.clone()
                             } else {
-                                options.full_filter.clone()
+                                full_filter.clone()
                             }
                         } else {
-                            options.full_filter.clone()
+                            full_filter.clone()
                         }
                     } else {
-                        options.full_filter.clone()
+                        full_filter.clone()
                     };
 
                     if let Some(f) = filter {
-                        filters.insert(fragment_id, Arc::new(f));
+                        filters.insert(fragment_id, f);
                     }
 
                     log::trace!(
@@ -1024,8 +1032,7 @@ impl FilteredReadStream {
                     continue;
                 }
 
-                // Get filter for this fragment (convert Arc<Expr> back to Expr)
-                let filter = plan.filters.get(&fragment_id).map(|f| (**f).clone());
+                let filter = plan.filters.get(&fragment_id).cloned();
                 let physical_filter = filter
                     .as_ref()
                     .and_then(|filter| options.physical_filter(filter));
@@ -5891,6 +5898,40 @@ mod tests {
              are produced, so bytes_read stays 0 even though I/O occurred",
             bytes_read
         );
+    }
+
+    #[test_log::test(tokio::test)]
+    async fn test_fragment_filters_share_arc() {
+        let fixture = TestFixture::new().await;
+        let filter_plan = fixture.filter_plan("not_indexed >= 75", false).await;
+        let options =
+            FilteredReadOptions::basic_full_read(&fixture.dataset).with_filter_plan(filter_plan);
+        let fragments = FilteredReadStream::load_all_fragments(&fixture.dataset, &options)
+            .await
+            .unwrap();
+        let plan = FilteredReadStream::plan_scan(fragments, &None, &options);
+
+        assert!(plan.filters.len() > 1);
+        let mut filters = plan.filters.values();
+        let first_filter = filters.next().unwrap();
+        assert_eq!(first_filter.as_ref(), options.full_filter.as_ref().unwrap());
+        assert!(filters.all(|filter| Arc::ptr_eq(first_filter, filter)));
+
+        let scheduler = FilteredReadStream::make_scan_scheduler(&fixture.dataset, &options);
+        let base_schedulers = FilteredReadStream::make_base_schedulers(&options);
+        let scoped_fragments = FilteredReadStream::plan_to_scoped_fragments(
+            &plan,
+            fixture.dataset.fragments(),
+            &fixture.dataset,
+            &options,
+            scheduler,
+            base_schedulers,
+        );
+
+        assert_eq!(scoped_fragments.len(), plan.filters.len());
+        for fragment in &scoped_fragments {
+            assert!(Arc::ptr_eq(first_filter, fragment.filter.as_ref().unwrap()));
+        }
     }
 
     /// Test that direct execution gives the same result as get_plan + execute_with_plan
